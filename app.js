@@ -12,6 +12,8 @@ let lastTrajectoryRenderMs = 0;
 let nextColorIndex = 0;
 let passEntries = [];
 let selectedPassKey = "";
+let trajBackMinutes = 20;
+let trajForwardMinutes = 100;
 
 const DEFAULT_GS = { id: "gs-adelaide", name: "Adelaide", lat: -34.9285, lon: 138.6007, altKm: 0.05, active: true, primary: true };
 const EARTH_RADIUS_KM = 6378.137;
@@ -72,6 +74,8 @@ const lbGsTxEl = document.getElementById("lbGsTx");
 const lbGsGainEl = document.getElementById("lbGsGain");
 const lbSatTxEl = document.getElementById("lbSatTx");
 const lbSatGainEl = document.getElementById("lbSatGain");
+const trajBackMinEl = document.getElementById("trajBackMin");
+const trajForwardMinEl = document.getElementById("trajForwardMin");
 const mapEl = document.getElementById("map");
 const svgEl = document.getElementById("mapSvg");
 const sphereEl = document.getElementById("sphere");
@@ -253,6 +257,12 @@ function updatePassSelectionUI() {
   });
 }
 
+function getOrbitPeriodMinutes(norad) {
+  const satrec = satrecMap.get(norad);
+  if (!satrec || !Number.isFinite(satrec.no) || satrec.no <= 0) return 96;
+  return (2 * Math.PI) / satrec.no;
+}
+
 function drawSkyView(nowStates, now) {
   const ctx = skyCanvasEl.getContext("2d");
   const w = skyCanvasEl.width;
@@ -292,10 +302,13 @@ function drawSkyView(nowStates, now) {
 
   for (const st of nowStates) {
     const satrec = satrecMap.get(st.norad);
-    if (satrec) {
-      const pts = [];
-      for (let dtMin = -15; dtMin <= 45; dtMin += 1) {
-        const t = new Date(now.getTime() + dtMin * 60000);
+      if (satrec) {
+        const pts = [];
+        const periodMin = getOrbitPeriodMinutes(st.norad);
+        const startMin = -0.1 * periodMin;
+        const endMin = 0.15 * periodMin;
+        for (let dtMin = startMin; dtMin <= endMin; dtMin += 1) {
+          const t = new Date(now.getTime() + dtMin * 60000);
         const pv = satellite.propagate(satrec, t);
         if (!pv.position || !pv.velocity) continue;
         const tempState = { positionEci: pv.position, norad: st.norad };
@@ -622,7 +635,7 @@ function renderMaskForPrimary(nowStates) {
 function buildTrajectoryLine(norad, now) {
   const satrec = satrecMap.get(norad); if (!satrec) return null;
   const coords = [];
-  for (let t = now.getTime() - 20 * 60 * 1000; t <= now.getTime() + 100 * 60 * 1000; t += 60 * 1000) {
+  for (let t = now.getTime() - trajBackMinutes * 60 * 1000; t <= now.getTime() + trajForwardMinutes * 60 * 1000; t += 60 * 1000) {
     const d = new Date(t), pv = satellite.propagate(satrec, d); if (!pv.position) continue;
     const gd = satellite.eciToGeodetic(pv.position, satellite.gstime(d));
     coords.push([satellite.degreesLong(gd.longitude), satellite.degreesLat(gd.latitude)]);
@@ -808,6 +821,16 @@ simSpeedEl.addEventListener("change", () => { updateClockMode(); renderPassForec
 simNowEl.addEventListener("click", () => { simTimeMs = Date.now(); simStartEl.value = toDateTimeLocalValue(simTimeMs); renderPassForecast(); });
 addGsBtn.addEventListener("click", addGroundStationFromForm);
 [lbFreqEl, lbGsTxEl, lbGsGainEl, lbSatTxEl, lbSatGainEl].forEach((el) => el.addEventListener("input", () => { tick(0); drawDopplerProfile(); }));
+trajBackMinEl.addEventListener("input", () => {
+  trajBackMinutes = Math.max(0, Number(trajBackMinEl.value) || 0);
+  renderTrajectory(getCurrentTime());
+  tick(0);
+});
+trajForwardMinEl.addEventListener("input", () => {
+  trajForwardMinutes = Math.max(0, Number(trajForwardMinEl.value) || 0);
+  renderTrajectory(getCurrentTime());
+  tick(0);
+});
 passListEl.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target : event.target?.parentElement;
   if (!target) return;

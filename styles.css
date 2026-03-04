@@ -46,6 +46,7 @@ header p {
 .ground-section,
 .link-budget,
 .links-panel,
+.traj-settings,
 .geometry-panels .viz-card {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -376,6 +377,57 @@ header p {
   gap: 4px;
   color: #cce8ff;
   font-size: 0.9rem;
+}
+
+.traj-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.traj-grid label {
+  display: grid;
+  gap: 4px;
+  color: #cce8ff;
+  font-size: 0.9rem;
+}
+
+.traj-grid input {
+  border-radius: 8px;
+  border: 1px solid rgba(122, 170, 210, 0.5);
+  background: #0f273b;
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.settings-tab {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0;
+}
+
+.settings-tab > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 12px;
+  font-weight: 600;
+  color: #cce8ff;
+}
+
+.settings-tab > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-tab[open] > summary {
+  border-bottom: 1px solid rgba(122, 170, 210, 0.25);
+}
+
+.settings-tab .traj-settings {
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 
 .geometry-panels {
