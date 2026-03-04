@@ -19,6 +19,28 @@ let trajForwardMinutes = 100;
 const DEFAULT_GS = { id: "gs-adelaide", name: "Adelaide", lat: -34.9285, lon: 138.6007, altKm: 0.05, active: true, primary: true };
 const EARTH_RADIUS_KM = 6378.137;
 const PRESET_PATTERN = /^(CENTAURI|PROXIMA)-\d+$/i;
+const MAJOR_CITIES = [
+  { name: "Santiago, Chile", lat: -33.4489, lon: -70.6693, altKm: 0.57 },
+  { name: "Adelaide, Australia", lat: -34.9285, lon: 138.6007, altKm: 0.05 },
+  { name: "Sydney, Australia", lat: -33.8688, lon: 151.2093, altKm: 0.058 },
+  { name: "Melbourne, Australia", lat: -37.8136, lon: 144.9631, altKm: 0.031 },
+  { name: "Auckland, New Zealand", lat: -36.8509, lon: 174.7645, altKm: 0.03 },
+  { name: "Wellington, New Zealand", lat: -41.2865, lon: 174.7762, altKm: 0.015 },
+  { name: "Punta Arenas, Chile", lat: -53.1638, lon: -70.9171, altKm: 0.037 },
+  { name: "La Paz, Mexico", lat: 24.1426, lon: -110.3128, altKm: 0.018 },
+  { name: "Pretoria, South Africa", lat: -25.7479, lon: 28.2293, altKm: 1.339 },
+  { name: "Cape Town, South Africa", lat: -33.9249, lon: 18.4241, altKm: 0.025 },
+  { name: "Reykjavik, Iceland", lat: 64.1466, lon: -21.9426, altKm: 0.061 },
+  { name: "Kandy, Sri Lanka", lat: 7.2906, lon: 80.6337, altKm: 0.5 },
+  { name: "Colombo, Sri Lanka", lat: 6.9271, lon: 79.8612, altKm: 0.006 },
+  { name: "Port Louis, Mauritius", lat: -20.1609, lon: 57.5012, altKm: 0.01 },
+  { name: "Ponta Delgada, Azores, Portugal", lat: 37.7412, lon: -25.6756, altKm: 0.02 },
+  { name: "Lisbon, Portugal", lat: 38.7223, lon: -9.1393, altKm: 0.002 },
+  { name: "Baku, Azerbaijan", lat: 40.4093, lon: 49.8671, altKm: 0.028 },
+  { name: "Sao Paulo, Brazil", lat: -23.5505, lon: -46.6333, altKm: 0.76 },
+  { name: "Houston, USA", lat: 29.7604, lon: -95.3698, altKm: 0.013 },
+  { name: "Tokyo, Japan", lat: 35.6762, lon: 139.6503, altKm: 0.04 }
+];
 const CATALOG_CACHE_KEY = "celestrakAllCatalog_v2";
 const GS_CACHE_KEY = "groundStations_v1";
 const CATALOG_MAX_AGE_MS = 8 * 60 * 60 * 1000;
@@ -68,6 +90,7 @@ const gsNameEl = document.getElementById("gsName");
 const gsLatEl = document.getElementById("gsLat");
 const gsLonEl = document.getElementById("gsLon");
 const gsAltEl = document.getElementById("gsAlt");
+const majorCitiesListEl = document.getElementById("majorCitiesList");
 const addGsBtn = document.getElementById("addGsBtn");
 const gsListEl = document.getElementById("gsList");
 const lbUplinkFreqEl = document.getElementById("lbUplinkFreq");
@@ -198,6 +221,28 @@ function loadGroundStations() {
 function saveGroundStations() { localStorage.setItem(GS_CACHE_KEY, JSON.stringify(groundStations)); }
 function getPrimaryGroundStation() { return groundStations.find((gs) => gs.primary) || groundStations[0] || { ...DEFAULT_GS }; }
 
+function populateCityDatalist() {
+  if (!majorCitiesListEl) return;
+  majorCitiesListEl.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  for (const city of MAJOR_CITIES) {
+    const opt = document.createElement("option");
+    opt.value = city.name;
+    frag.appendChild(opt);
+  }
+  majorCitiesListEl.appendChild(frag);
+}
+
+function tryAutofillGroundStationCity() {
+  const q = gsNameEl.value.trim().toLowerCase();
+  if (!q) return;
+  const match = MAJOR_CITIES.find((c) => c.name.toLowerCase() === q);
+  if (!match) return;
+  gsLatEl.value = String(match.lat);
+  gsLonEl.value = String(match.lon);
+  gsAltEl.value = String(match.altKm);
+}
+
 function renderGroundStationList() {
   gsListEl.innerHTML = "";
   for (const gs of groundStations) {
@@ -220,6 +265,7 @@ function renderGroundStationList() {
 }
 
 function addGroundStationFromForm() {
+  tryAutofillGroundStationCity();
   const name = gsNameEl.value.trim(); const lat = Number(gsLatEl.value); const lon = Number(gsLonEl.value);
   const altKm = gsAltEl.value.trim() === "" ? 0 : Number(gsAltEl.value);
   if (!name || !Number.isFinite(lat) || !Number.isFinite(lon) || !Number.isFinite(altKm)) { setStatus("Ground station fields invalid."); return; }
@@ -891,7 +937,7 @@ function startAnimationLoop() {
 
 async function bootstrap() {
   try {
-    loadGroundStations(); renderGroundStationList(); applySimulationControlsState(); updateTimeControlsUI(); simStartEl.value = toDateTimeLocalValue(Date.now());
+    loadGroundStations(); renderGroundStationList(); applySimulationControlsState(); updateTimeControlsUI(); populateCityDatalist(); simStartEl.value = toDateTimeLocalValue(Date.now());
     await loadWorldData();
     fitProjection(); await loadCatalog(false); await loadSelectedSatellites(); tick(FRAME_MS); startAnimationLoop();
   } catch (err) { setStatus(`Error: ${err.message}`); }
@@ -906,6 +952,7 @@ simStartEl.addEventListener("change", () => { if (!simStartEl.value) return; con
 simSpeedEl.addEventListener("change", () => { updateClockMode(); renderPassForecast(); });
 simNowEl.addEventListener("click", () => { simTimeMs = Date.now(); simStartEl.value = toDateTimeLocalValue(simTimeMs); renderPassForecast(); });
 addGsBtn.addEventListener("click", addGroundStationFromForm);
+gsNameEl.addEventListener("input", tryAutofillGroundStationCity);
 [lbUplinkFreqEl, lbUplinkTxPowerEl, lbUplinkTxGainEl, lbUplinkRxGainEl, lbUplinkRxAmpEl, lbUplinkLossesEl, lbDownlinkFreqEl, lbDownlinkTxPowerEl, lbDownlinkTxGainEl, lbDownlinkRxGainEl, lbDownlinkRxAmpEl, lbDownlinkLossesEl].forEach((el) => el.addEventListener("input", () => { tick(0); drawDopplerProfile(); }));
 trajBackMinEl.addEventListener("input", () => {
   trajBackMinutes = Math.max(0, Number(trajBackMinEl.value) || 0);

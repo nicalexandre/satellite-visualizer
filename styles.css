@@ -38,6 +38,34 @@ header p {
   color: var(--muted);
 }
 
+.page-links {
+  margin-bottom: 10px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.page-links a {
+  display: inline-block;
+  color: #9fd8ff;
+  text-decoration: none;
+  border: 1px solid rgba(122, 170, 210, 0.45);
+  background: rgba(15, 39, 59, 0.8);
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.page-links a:hover {
+  border-color: var(--accent);
+}
+
+.page-links a.active {
+  background: rgba(34, 211, 238, 0.18);
+  border-color: rgba(34, 211, 238, 0.8);
+  color: #d9f6ff;
+}
+
 .controls,
 .status,
 .readout,
@@ -493,6 +521,151 @@ header p {
   color: #8ff5d0;
 }
 
+.planner-controls {
+  grid-template-columns: minmax(560px, 1.5fr) minmax(280px, 1fr);
+}
+
+.planner-time-controls {
+  grid-template-columns: auto auto minmax(180px, 1fr) auto;
+}
+
+.planner-form {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.planner-form label {
+  display: grid;
+  gap: 4px;
+  color: #cce8ff;
+  font-size: 0.9rem;
+}
+
+.planner-form input,
+.planner-form select {
+  border-radius: 8px;
+  border: 1px solid rgba(122, 170, 210, 0.5);
+  background: #0f273b;
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.planner-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.planner-actions button {
+  border-radius: 8px;
+  border: 1px solid rgba(122, 170, 210, 0.5);
+  background: #0d3347;
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.planner-hint {
+  color: #b6dbf7;
+  font-size: 0.88rem;
+}
+
+.viz-sat-filter {
+  border: 1px solid rgba(122, 170, 210, 0.35);
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(8, 24, 37, 0.55);
+}
+
+.viz-sat-filter-title {
+  color: #cce8ff;
+  font-size: 0.88rem;
+  margin-bottom: 6px;
+}
+
+.viz-sat-filter-list {
+  display: grid;
+  gap: 6px;
+  max-height: 150px;
+  overflow: auto;
+}
+
+.viz-sat-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.86rem;
+  color: #d2ecff;
+}
+
+.viz-swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid rgba(230, 245, 255, 0.7);
+}
+
+.planner-table-wrap {
+  padding: 12px;
+}
+
+.table-scroll {
+  overflow: auto;
+}
+
+.planner-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 980px;
+}
+
+.planner-table th,
+.planner-table td {
+  border: 1px solid rgba(122, 170, 210, 0.3);
+  padding: 7px 8px;
+  text-align: left;
+  vertical-align: top;
+  font-size: 0.88rem;
+}
+
+.planner-table th {
+  background: rgba(18, 47, 69, 0.95);
+}
+
+.planner-table tbody tr:nth-child(even) {
+  background: rgba(10, 30, 47, 0.5);
+}
+
+.planner-table tbody tr.planner-missed {
+  background: rgba(120, 30, 30, 0.22);
+}
+
+#planCanvas {
+  width: 100%;
+  height: auto;
+  display: block;
+  border: 1px solid rgba(122, 170, 210, 0.3);
+  border-radius: 8px;
+  background: rgba(7, 19, 31, 0.68);
+}
+
+#timelineCanvas {
+  width: 100%;
+  height: auto;
+  display: block;
+  border: 1px solid rgba(122, 170, 210, 0.3);
+  border-radius: 8px;
+  background: rgba(7, 19, 31, 0.68);
+}
+
+.planner-ground-form {
+  grid-template-columns: 1.4fr 1fr 1fr 1fr auto;
+}
+
 @media (max-width: 1160px) {
   .controls {
     grid-template-columns: 1fr;
@@ -511,6 +684,8 @@ header p {
   .app { padding: 12px; }
   .sim-controls { grid-template-columns: 1fr 1fr; }
   .time-controls { grid-template-columns: 1fr; }
+  .planner-time-controls { grid-template-columns: 1fr; }
   .selector-head { flex-direction: column; align-items: flex-start; }
   .ground-form { grid-template-columns: 1fr; }
+  .planner-ground-form { grid-template-columns: 1fr; }
 }
