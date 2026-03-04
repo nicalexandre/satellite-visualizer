@@ -379,6 +379,27 @@ header p {
   font-size: 0.9rem;
 }
 
+.budget-table {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.budget-head {
+  color: #cce8ff;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.budget-table input {
+  border-radius: 8px;
+  border: 1px solid rgba(122, 170, 210, 0.5);
+  background: #0f273b;
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+}
+
 .traj-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -479,6 +500,10 @@ header p {
 
   .geometry-panels {
     grid-template-columns: 1fr;
+  }
+
+  .budget-table {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

@@ -99,44 +99,6 @@
       <div id="statList" class="stat-list"></div>
     </section>
 
-    <section class="ground-section">
-      <h2>Ground Stations</h2>
-      <div class="ground-form">
-        <input id="gsName" type="text" placeholder="Name (e.g. Hobart)" />
-        <input id="gsLat" type="number" step="0.0001" placeholder="Latitude" />
-        <input id="gsLon" type="number" step="0.0001" placeholder="Longitude" />
-        <input id="gsAlt" type="number" step="0.001" placeholder="Altitude km (optional)" />
-        <button id="addGsBtn" type="button">Add Ground Station</button>
-      </div>
-      <div id="gsList" class="gs-list"></div>
-    </section>
-
-    <section class="link-budget">
-      <h2>Link Budget Inputs</h2>
-      <div class="budget-grid">
-        <label>Frequency (MHz) <input id="lbFreq" type="number" step="1" value="437" /></label>
-        <label>GS TX Power (dBm) <input id="lbGsTx" type="number" step="0.1" value="30" /></label>
-        <label>GS Antenna Gain (dBi) <input id="lbGsGain" type="number" step="0.1" value="12" /></label>
-        <label>SAT TX Power (dBm) <input id="lbSatTx" type="number" step="0.1" value="27" /></label>
-        <label>SAT Antenna Gain (dBi) <input id="lbSatGain" type="number" step="0.1" value="3" /></label>
-      </div>
-    </section>
-
-    <details class="settings-tab">
-      <summary>Settings</summary>
-      <section class="traj-settings">
-        <h2>Trajectory Settings (Map)</h2>
-        <div class="traj-grid">
-          <label>Backward (min)
-            <input id="trajBackMin" type="number" min="0" step="1" value="20" />
-          </label>
-          <label>Forward (min)
-            <input id="trajForwardMin" type="number" min="0" step="1" value="100" />
-          </label>
-        </div>
-      </section>
-    </details>
-
     <section class="links-panel">
       <h2>Live GS-Satellite Links</h2>
       <ul id="linkList"></ul>
@@ -158,6 +120,59 @@
       <h2><span id="passTitle">Adelaide</span> Pass Forecast (Elevation > 5 deg, Next 48h)</h2>
       <ul id="passList"></ul>
     </section>
+
+    <section class="link-budget">
+      <h2>Link Budget Inputs</h2>
+      <div class="budget-table">
+        <div class="budget-head">Frequency (MHz)</div>
+        <div class="budget-head">TX Power (dBm)</div>
+        <div class="budget-head">TX Antenna Gain (dBi)</div>
+        <div class="budget-head">RX Antenna Gain (dBi)</div>
+        <div class="budget-head">RX Amplification (dB)</div>
+        <div class="budget-head">Overall Losses (dB)</div>
+
+        <input id="lbDownlinkFreq" type="number" step="1" value="2265" />
+        <input id="lbDownlinkTxPower" type="number" step="0.1" value="33" />
+        <input id="lbDownlinkTxGain" type="number" step="0.1" value="6" />
+        <input id="lbDownlinkRxGain" type="number" step="0.1" value="25" />
+        <input id="lbDownlinkRxAmp" type="number" step="0.1" value="30" />
+        <input id="lbDownlinkLosses" type="number" step="0.1" value="1" />
+
+        <input id="lbUplinkFreq" type="number" step="1" value="2065" />
+        <input id="lbUplinkTxPower" type="number" step="0.1" value="33" />
+        <input id="lbUplinkTxGain" type="number" step="0.1" value="25" />
+        <input id="lbUplinkRxGain" type="number" step="0.1" value="6" />
+        <input id="lbUplinkRxAmp" type="number" step="0.1" value="20" />
+        <input id="lbUplinkLosses" type="number" step="0.1" value="1" />
+      </div>
+    </section>
+
+    <section class="ground-section">
+      <h2>Ground Stations</h2>
+      <div class="ground-form">
+        <input id="gsName" type="text" placeholder="Name (e.g. Hobart)" />
+        <input id="gsLat" type="number" step="0.0001" placeholder="Latitude" />
+        <input id="gsLon" type="number" step="0.0001" placeholder="Longitude" />
+        <input id="gsAlt" type="number" step="0.001" placeholder="Altitude km (optional)" />
+        <button id="addGsBtn" type="button">Add Ground Station</button>
+      </div>
+      <div id="gsList" class="gs-list"></div>
+    </section>
+
+    <details class="settings-tab">
+      <summary>Settings</summary>
+      <section class="traj-settings">
+        <h2>Trajectory Settings (Map)</h2>
+        <div class="traj-grid">
+          <label>Backward (min)
+            <input id="trajBackMin" type="number" min="0" step="1" value="20" />
+          </label>
+          <label>Forward (min)
+            <input id="trajForwardMin" type="number" min="0" step="1" value="100" />
+          </label>
+        </div>
+      </section>
+    </details>
   </main>
 
   <script src="https://unpkg.com/d3@7"></script>

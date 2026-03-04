@@ -9,6 +9,7 @@ let groundStations = [];
 let lastPassForecastMs = 0;
 let simTimeMs = Date.now();
 let lastTrajectoryRenderMs = 0;
+let lastDopplerRenderMs = 0;
 let nextColorIndex = 0;
 let passEntries = [];
 let selectedPassKey = "";
@@ -24,6 +25,7 @@ const CATALOG_MAX_AGE_MS = 8 * 60 * 60 * 1000;
 const PASS_FORECAST_WINDOW_HOURS = 48;
 const PASS_FORECAST_STEP_SEC = 30;
 const PASS_MIN_ELEVATION_DEG = 5;
+const PASS_LIST_GRACE_MS = 10 * 60 * 1000;
 const PASS_RECALC_MS = 10 * 60 * 1000;
 const WORLD_ATLAS_URL = "https://unpkg.com/world-atlas@2/land-110m.json";
 const CATALOG_URL_CANDIDATES = [
@@ -33,7 +35,6 @@ const CATALOG_URL_CANDIDATES = [
 const TARGET_FPS = 30;
 const FRAME_MS = 1000 / TARGET_FPS;
 const TRAJECTORY_REFRESH_MS = 220;
-const ASSUMED_TOTAL_LOSS_DB = 3;
 const SAA_POLYGON = { type: "Polygon", coordinates: [[[-92,-4],[-85,1],[-72,2],[-55,0],[-40,-4],[-28,-8],[-20,-14],[-18,-22],[-22,-30],[-30,-36],[-40,-40],[-50,-39],[-60,-35],[-70,-28],[-78,-20],[-86,-12],[-92,-4]]] };
 
 const statusEl = document.getElementById("status");
@@ -69,11 +70,18 @@ const gsLonEl = document.getElementById("gsLon");
 const gsAltEl = document.getElementById("gsAlt");
 const addGsBtn = document.getElementById("addGsBtn");
 const gsListEl = document.getElementById("gsList");
-const lbFreqEl = document.getElementById("lbFreq");
-const lbGsTxEl = document.getElementById("lbGsTx");
-const lbGsGainEl = document.getElementById("lbGsGain");
-const lbSatTxEl = document.getElementById("lbSatTx");
-const lbSatGainEl = document.getElementById("lbSatGain");
+const lbUplinkFreqEl = document.getElementById("lbUplinkFreq");
+const lbUplinkTxPowerEl = document.getElementById("lbUplinkTxPower");
+const lbUplinkTxGainEl = document.getElementById("lbUplinkTxGain");
+const lbUplinkRxGainEl = document.getElementById("lbUplinkRxGain");
+const lbUplinkRxAmpEl = document.getElementById("lbUplinkRxAmp");
+const lbUplinkLossesEl = document.getElementById("lbUplinkLosses");
+const lbDownlinkFreqEl = document.getElementById("lbDownlinkFreq");
+const lbDownlinkTxPowerEl = document.getElementById("lbDownlinkTxPower");
+const lbDownlinkTxGainEl = document.getElementById("lbDownlinkTxGain");
+const lbDownlinkRxGainEl = document.getElementById("lbDownlinkRxGain");
+const lbDownlinkRxAmpEl = document.getElementById("lbDownlinkRxAmp");
+const lbDownlinkLossesEl = document.getElementById("lbDownlinkLosses");
 const trajBackMinEl = document.getElementById("trajBackMin");
 const trajForwardMinEl = document.getElementById("trajForwardMin");
 const mapEl = document.getElementById("map");
@@ -221,12 +229,34 @@ function addGroundStationFromForm() {
 }
 
 function readLinkBudgetInputs() {
-  return { freqMHz: Number(lbFreqEl.value) || 437, gsTxDbm: Number(lbGsTxEl.value) || 30, gsGainDbi: Number(lbGsGainEl.value) || 12, satTxDbm: Number(lbSatTxEl.value) || 27, satGainDbi: Number(lbSatGainEl.value) || 3 };
+  return {
+    uplinkFreqMHz: Number(lbUplinkFreqEl.value) || 2065,
+    uplinkTxPowerDbm: Number(lbUplinkTxPowerEl.value) || 33,
+    uplinkTxGainDbi: Number(lbUplinkTxGainEl.value) || 25,
+    uplinkRxGainDbi: Number(lbUplinkRxGainEl.value) || 6,
+    uplinkRxAmpDb: Number(lbUplinkRxAmpEl.value) || 20,
+    uplinkLossesDb: Number(lbUplinkLossesEl.value) || 1,
+    downlinkFreqMHz: Number(lbDownlinkFreqEl.value) || 2265,
+    downlinkTxPowerDbm: Number(lbDownlinkTxPowerEl.value) || 33,
+    downlinkTxGainDbi: Number(lbDownlinkTxGainEl.value) || 6,
+    downlinkRxGainDbi: Number(lbDownlinkRxGainEl.value) || 25,
+    downlinkRxAmpDb: Number(lbDownlinkRxAmpEl.value) || 30,
+    downlinkLossesDb: Number(lbDownlinkLossesEl.value) || 1
+  };
 }
 
 function calcFsplDb(freqMHz, rangeKm) { return 32.44 + 20 * Math.log10(Math.max(rangeKm, 0.001)) + 20 * Math.log10(Math.max(freqMHz, 1)); }
-function calcLinkBudget(rangeKm, b) { const fspl = calcFsplDb(b.freqMHz, rangeKm); return { fspl, rxSatDbm: b.gsTxDbm + b.gsGainDbi + b.satGainDbi - fspl - ASSUMED_TOTAL_LOSS_DB, rxGsDbm: b.satTxDbm + b.satGainDbi + b.gsGainDbi - fspl - ASSUMED_TOTAL_LOSS_DB }; }
-function getCarrierHz() { return (Number(lbFreqEl.value) || 437) * 1e6; }
+function calcLinkBudget(rangeKm, b) {
+  const fsplUplink = calcFsplDb(b.uplinkFreqMHz, rangeKm);
+  const fsplDownlink = calcFsplDb(b.downlinkFreqMHz, rangeKm);
+  const rxSatDbm = b.uplinkTxPowerDbm + b.uplinkTxGainDbi + b.uplinkRxGainDbi + b.uplinkRxAmpDb - fsplUplink - b.uplinkLossesDb;
+  const rxGsDbm = b.downlinkTxPowerDbm + b.downlinkTxGainDbi + b.downlinkRxGainDbi + b.downlinkRxAmpDb - fsplDownlink - b.downlinkLossesDb;
+  return { fsplUplink, fsplDownlink, rxSatDbm, rxGsDbm };
+}
+function getCarrierHzes() {
+  const b = readLinkBudgetInputs();
+  return { uplinkHz: b.uplinkFreqMHz * 1e6, downlinkHz: b.downlinkFreqMHz * 1e6 };
+}
 
 function computeLookFromStation(station, satState, now) {
   const gmst = satellite.gstime(now);
@@ -300,6 +330,34 @@ function drawSkyView(nowStates, now) {
   const station = getPrimaryGroundStation();
   skyGsNameEl.textContent = station.name;
 
+  const selectedPass = selectedPassKey ? passEntries.find((p) => p.key === selectedPassKey) : null;
+  if (selectedPass) {
+    const satrec = satrecMap.get(selectedPass.norad);
+    if (satrec) {
+      const passPts = [];
+      const passStepMs = 20 * 1000;
+      for (let t = selectedPass.rise.getTime(); t <= selectedPass.set.getTime(); t += passStepMs) {
+        const d = new Date(t);
+        const pv = satellite.propagate(satrec, d);
+        if (!pv.position || !pv.velocity) continue;
+        const look = computeLookFromStation(selectedPass.station, { positionEci: pv.position, norad: selectedPass.norad }, d);
+        const p = skyPointFromLook(look, cx, cy, R);
+        if (!p) continue;
+        passPts.push(p);
+      }
+      if (passPts.length > 1) {
+        ctx.strokeStyle = colorForNorad(selectedPass.norad);
+        ctx.globalAlpha = 0.9;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(passPts[0].x, passPts[0].y);
+        for (let i = 1; i < passPts.length; i += 1) ctx.lineTo(passPts[i].x, passPts[i].y);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+
   for (const st of nowStates) {
     const satrec = satrecMap.get(st.norad);
       if (satrec) {
@@ -356,7 +414,7 @@ function computeDopplerSeries(entry) {
     longitude: satellite.degreesToRadians(station.lon),
     height: station.altKm
   };
-  const carrierHz = getCarrierHz();
+  const carriers = getCarrierHzes();
   const cKmPerSec = 299792.458;
   const stepSec = 10;
   const out = [];
@@ -371,13 +429,14 @@ function computeDopplerSeries(entry) {
     const look1 = satellite.ecfToLookAngles(observer, satellite.eciToEcf(pv1.position, satellite.gstime(d1)));
     const look2 = satellite.ecfToLookAngles(observer, satellite.eciToEcf(pv2.position, satellite.gstime(d2)));
     const rangeRate = look2.rangeSat - look1.rangeSat;
-    const shiftHz = -(rangeRate / cKmPerSec) * carrierHz;
+    const shiftDownHz = -(rangeRate / cKmPerSec) * carriers.downlinkHz;
+    const shiftUpHz = -(rangeRate / cKmPerSec) * carriers.uplinkHz;
 
     out.push({
       time: new Date(t),
       minutes: (t - entry.rise.getTime()) / 60000,
-      downlinkHz: shiftHz,
-      uplinkHz: -shiftHz
+      downlinkHz: shiftDownHz,
+      uplinkHz: shiftUpHz
     });
   }
 
@@ -459,6 +518,28 @@ function drawDopplerProfile() {
   });
   ctx.stroke();
 
+  const now = getCurrentTime();
+  if (now >= entry.rise && now <= entry.set) {
+    const currentMin = (now.getTime() - entry.rise.getTime()) / 60000;
+    let closest = series[0];
+    for (const s of series) {
+      if (Math.abs(s.minutes - currentMin) < Math.abs(closest.minutes - currentMin)) closest = s;
+    }
+    const xNow = xToPx(closest.minutes);
+    const yDl = yToPx(closest.downlinkHz / 1000);
+    const yUl = yToPx(closest.uplinkHz / 1000);
+
+    ctx.fillStyle = "#7fffd4";
+    ctx.beginPath(); ctx.arc(xNow, yDl, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#f6ba6f";
+    ctx.beginPath(); ctx.arc(xNow, yUl, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "rgba(220,240,255,0.65)";
+    ctx.beginPath(); ctx.moveTo(xNow, margin.t); ctx.lineTo(xNow, h - margin.b); ctx.stroke();
+
+    ctx.fillStyle = "#d2ecff";
+    ctx.fillText(`Current DL: ${(closest.downlinkHz / 1000).toFixed(2)} kHz | Current UL: ${(closest.uplinkHz / 1000).toFixed(2)} kHz`, margin.l, margin.t - 4);
+  }
+
   ctx.fillStyle = "#d2ecff";
   ctx.fillText("Time from AOS (min)", w / 2 - 55, h - 8);
   ctx.fillStyle = "#7fffd4";
@@ -466,7 +547,7 @@ function drawDopplerProfile() {
   ctx.fillStyle = "#f6ba6f";
   ctx.fillText("Uplink shift", w - 190, 36);
 
-  dopplerInfoEl.textContent = `${entry.name} | Rise ${formatDateTimeDisplay(entry.rise, false)} | Set ${formatDateTimeDisplay(entry.set, false)} | Freq ${Number(lbFreqEl.value || 437).toFixed(1)} MHz`;
+  dopplerInfoEl.textContent = `${entry.name} | Rise ${formatDateTimeDisplay(entry.rise, false)} | Set ${formatDateTimeDisplay(entry.set, false)} | UL ${Number(lbUplinkFreqEl.value || 2065).toFixed(1)} MHz | DL ${Number(lbDownlinkFreqEl.value || 2265).toFixed(1)} MHz`;
 }
 async function fetchCatalogFromCelestrak() {
   let lastError = null;
@@ -733,10 +814,14 @@ function renderPassForecast() {
   passTitleEl.textContent = primary.name;
   passEntries = [];
   if (!selectedNorads.length) { drawDopplerProfile(); return; }
-  const now = getCurrentTime(), entries = [];
+  const now = getCurrentTime();
+  const forecastStart = new Date(now.getTime() - PASS_LIST_GRACE_MS);
+  const forecastHours = PASS_FORECAST_WINDOW_HOURS + PASS_LIST_GRACE_MS / 3600000;
+  const entries = [];
   for (const norad of selectedNorads) {
     const name = catalog.find((c) => c.norad === norad)?.name || norad;
-    for (const pass of computePassForecast(norad, primary, now, PASS_FORECAST_WINDOW_HOURS)) {
+    for (const pass of computePassForecast(norad, primary, forecastStart, forecastHours)) {
+      if (pass.set.getTime() < now.getTime() - PASS_LIST_GRACE_MS) continue;
       const key = `${norad}-${pass.rise.toISOString()}`;
       entries.push({ key, name, norad, station: { ...primary }, ...pass });
     }
@@ -795,6 +880,7 @@ function tick(dtMs = FRAME_MS) {
   const nowReal = Date.now();
   if (nowReal - lastTrajectoryRenderMs >= TRAJECTORY_REFRESH_MS) { renderTrajectory(now); lastTrajectoryRenderMs = nowReal; }
   if (nowReal - lastPassForecastMs > PASS_RECALC_MS) { renderPassForecast(); lastPassForecastMs = nowReal; }
+  if (nowReal - lastDopplerRenderMs > 500) { drawDopplerProfile(); lastDopplerRenderMs = nowReal; }
 }
 
 function startAnimationLoop() {
@@ -820,7 +906,7 @@ simStartEl.addEventListener("change", () => { if (!simStartEl.value) return; con
 simSpeedEl.addEventListener("change", () => { updateClockMode(); renderPassForecast(); });
 simNowEl.addEventListener("click", () => { simTimeMs = Date.now(); simStartEl.value = toDateTimeLocalValue(simTimeMs); renderPassForecast(); });
 addGsBtn.addEventListener("click", addGroundStationFromForm);
-[lbFreqEl, lbGsTxEl, lbGsGainEl, lbSatTxEl, lbSatGainEl].forEach((el) => el.addEventListener("input", () => { tick(0); drawDopplerProfile(); }));
+[lbUplinkFreqEl, lbUplinkTxPowerEl, lbUplinkTxGainEl, lbUplinkRxGainEl, lbUplinkRxAmpEl, lbUplinkLossesEl, lbDownlinkFreqEl, lbDownlinkTxPowerEl, lbDownlinkTxGainEl, lbDownlinkRxGainEl, lbDownlinkRxAmpEl, lbDownlinkLossesEl].forEach((el) => el.addEventListener("input", () => { tick(0); drawDopplerProfile(); }));
 trajBackMinEl.addEventListener("input", () => {
   trajBackMinutes = Math.max(0, Number(trajBackMinEl.value) || 0);
   renderTrajectory(getCurrentTime());
@@ -839,6 +925,7 @@ passListEl.addEventListener("click", (event) => {
   selectedPassKey = btn.dataset.passKey;
   updatePassSelectionUI();
   drawDopplerProfile();
+  tick(0);
 });
 timeLocalToggleEl.addEventListener("change", () => {
   if (timeLocalToggleEl.checked) timeCustomToggleEl.checked = false;
