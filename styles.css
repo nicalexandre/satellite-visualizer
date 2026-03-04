@@ -45,7 +45,8 @@ header p {
 .stats-panel,
 .ground-section,
 .link-budget,
-.links-panel {
+.links-panel,
+.geometry-panels .viz-card {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -133,6 +134,27 @@ header p {
   grid-template-columns: auto auto 1fr auto auto auto;
   gap: 8px;
   align-items: center;
+}
+
+.time-controls {
+  display: grid;
+  grid-template-columns: auto auto minmax(180px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.time-controls input[type="text"] {
+  border-radius: 8px;
+  border: 1px solid rgba(122, 170, 210, 0.5);
+  background: #0f273b;
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+}
+
+#timeZoneLabel {
+  color: #9fd8ff;
+  font-size: 0.9rem;
 }
 
 .map-wrap {
@@ -356,8 +378,54 @@ header p {
   font-size: 0.9rem;
 }
 
+.geometry-panels {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) minmax(380px, 1.6fr);
+  gap: 12px;
+}
+
+.viz-card h2 {
+  margin: 0 0 10px;
+  font-size: 1.02rem;
+}
+
+#skyCanvas,
+#dopplerCanvas {
+  width: 100%;
+  height: auto;
+  display: block;
+  border: 1px solid rgba(122, 170, 210, 0.3);
+  border-radius: 8px;
+  background: rgba(7, 19, 31, 0.68);
+}
+
+.doppler-info {
+  color: #b6dbf7;
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+}
+
+.pass-item-btn {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.pass-item-btn.active {
+  color: #8ff5d0;
+}
+
 @media (max-width: 1160px) {
   .controls {
+    grid-template-columns: 1fr;
+  }
+
+  .geometry-panels {
     grid-template-columns: 1fr;
   }
 }
@@ -365,6 +433,7 @@ header p {
 @media (max-width: 760px) {
   .app { padding: 12px; }
   .sim-controls { grid-template-columns: 1fr 1fr; }
+  .time-controls { grid-template-columns: 1fr; }
   .selector-head { flex-direction: column; align-items: flex-start; }
   .ground-form { grid-template-columns: 1fr; }
 }

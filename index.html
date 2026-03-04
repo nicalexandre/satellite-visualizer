@@ -54,6 +54,13 @@
         <button id="simNow" type="button">Set Sim Now</button>
         <button id="refresh" type="button">Reload TLE</button>
       </div>
+
+      <div class="time-controls">
+        <label><input type="checkbox" id="timeLocalToggle"> Local Time</label>
+        <label><input type="checkbox" id="timeCustomToggle"> Custom TZ</label>
+        <input id="timeZoneInput" type="text" placeholder="e.g. Australia/Adelaide" disabled />
+        <span id="timeZoneLabel">UTC</span>
+      </div>
     </section>
 
     <section class="status" id="status">Loading...</section>
@@ -82,7 +89,7 @@
 
     <section class="readout">
       <div><strong>Clock:</strong> <span id="clockMode">REAL</span></div>
-      <div><strong>UTC:</strong> <span id="utc"></span></div>
+      <div><strong>Time:</strong> <span id="utc"></span></div>
       <div><strong>TLE cache:</strong> <span id="cacheInfo">-</span></div>
       <div><strong>TLE epoch:</strong> <span id="epoch">-</span></div>
     </section>
@@ -118,6 +125,18 @@
     <section class="links-panel">
       <h2>Live GS-Satellite Links</h2>
       <ul id="linkList"></ul>
+    </section>
+
+    <section class="geometry-panels">
+      <div class="viz-card">
+        <h2>Sky View (<span id="skyGsName">Primary GS</span>)</h2>
+        <canvas id="skyCanvas" width="560" height="560" aria-label="Sky view polar plot"></canvas>
+      </div>
+      <div class="viz-card">
+        <h2>Doppler Profile (Selected Pass)</h2>
+        <div id="dopplerInfo" class="doppler-info">Select a pass from the forecast list.</div>
+        <canvas id="dopplerCanvas" width="900" height="420" aria-label="Doppler profile"></canvas>
+      </div>
     </section>
 
     <section class="passes">

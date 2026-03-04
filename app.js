@@ -10,6 +10,8 @@ let lastPassForecastMs = 0;
 let simTimeMs = Date.now();
 let lastTrajectoryRenderMs = 0;
 let nextColorIndex = 0;
+let passEntries = [];
+let selectedPassKey = "";
 
 const DEFAULT_GS = { id: "gs-adelaide", name: "Adelaide", lat: -34.9285, lon: 138.6007, altKm: 0.05, active: true, primary: true };
 const EARTH_RADIUS_KM = 6378.137;
@@ -41,6 +43,10 @@ const passTitleEl = document.getElementById("passTitle");
 const passListEl = document.getElementById("passList");
 const statListEl = document.getElementById("statList");
 const linkListEl = document.getElementById("linkList");
+const skyGsNameEl = document.getElementById("skyGsName");
+const skyCanvasEl = document.getElementById("skyCanvas");
+const dopplerCanvasEl = document.getElementById("dopplerCanvas");
+const dopplerInfoEl = document.getElementById("dopplerInfo");
 const satSearchEl = document.getElementById("satSearch");
 const satCountsEl = document.getElementById("satCounts");
 const satChecklistEl = document.getElementById("satChecklist");
@@ -51,6 +57,10 @@ const simEnabledEl = document.getElementById("simEnabled");
 const simStartEl = document.getElementById("simStart");
 const simSpeedEl = document.getElementById("simSpeed");
 const simNowEl = document.getElementById("simNow");
+const timeLocalToggleEl = document.getElementById("timeLocalToggle");
+const timeCustomToggleEl = document.getElementById("timeCustomToggle");
+const timeZoneInputEl = document.getElementById("timeZoneInput");
+const timeZoneLabelEl = document.getElementById("timeZoneLabel");
 const gsNameEl = document.getElementById("gsName");
 const gsLatEl = document.getElementById("gsLat");
 const gsLonEl = document.getElementById("gsLon");
@@ -84,6 +94,49 @@ function formatDeg(v) { return `${v.toFixed(2)} deg`; }
 function formatKm(v) { return `${v.toFixed(1)} km`; }
 function formatKms(v) { return `${v.toFixed(3)} km/s`; }
 function wrapDegrees(v) { let out = v % 360; if (out < -180) out += 360; if (out > 180) out -= 360; return out; }
+
+function isValidTimeZone(tz) {
+  try { new Intl.DateTimeFormat("en-US", { timeZone: tz }).format(new Date()); return true; } catch { return false; }
+}
+
+function resolveTimeDisplayConfig() {
+  if (timeCustomToggleEl.checked) {
+    const custom = timeZoneInputEl.value.trim();
+    if (custom && isValidTimeZone(custom)) return { mode: "custom", timeZone: custom, label: custom };
+    return { mode: "utc", timeZone: "UTC", label: "UTC (invalid custom TZ)" };
+  }
+  if (timeLocalToggleEl.checked) return { mode: "local", timeZone: undefined, label: "Local" };
+  return { mode: "utc", timeZone: "UTC", label: "UTC" };
+}
+
+function updateTimeControlsUI() {
+  timeZoneInputEl.disabled = !timeCustomToggleEl.checked;
+  const cfg = resolveTimeDisplayConfig();
+  timeZoneLabelEl.textContent = cfg.label;
+}
+
+function formatDateTimeDisplay(date, withSeconds = true) {
+  const cfg = resolveTimeDisplayConfig();
+  if (cfg.mode === "utc") {
+    const iso = date.toISOString().replace("T", " ");
+    return withSeconds ? `${iso.slice(0, 19)} UTC` : `${iso.slice(0, 16)} UTC`;
+  }
+  const dtf = new Intl.DateTimeFormat("en-CA", {
+    timeZone: cfg.timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: withSeconds ? "2-digit" : undefined,
+    hour12: false
+  });
+  const parts = dtf.formatToParts(date);
+  const get = (t) => parts.find((p) => p.type === t)?.value || "";
+  const base = `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
+  const full = withSeconds ? `${base}:${get("second")}` : base;
+  return `${full} ${cfg.label}`;
+}
 
 function parseTleCatalog(text) {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -169,6 +222,239 @@ function readLinkBudgetInputs() {
 
 function calcFsplDb(freqMHz, rangeKm) { return 32.44 + 20 * Math.log10(Math.max(rangeKm, 0.001)) + 20 * Math.log10(Math.max(freqMHz, 1)); }
 function calcLinkBudget(rangeKm, b) { const fspl = calcFsplDb(b.freqMHz, rangeKm); return { fspl, rxSatDbm: b.gsTxDbm + b.gsGainDbi + b.satGainDbi - fspl - ASSUMED_TOTAL_LOSS_DB, rxGsDbm: b.satTxDbm + b.satGainDbi + b.gsGainDbi - fspl - ASSUMED_TOTAL_LOSS_DB }; }
+function getCarrierHz() { return (Number(lbFreqEl.value) || 437) * 1e6; }
+
+function computeLookFromStation(station, satState, now) {
+  const gmst = satellite.gstime(now);
+  const satEcf = satellite.eciToEcf(satState.positionEci, gmst);
+  const observer = {
+    latitude: satellite.degreesToRadians(station.lat),
+    longitude: satellite.degreesToRadians(station.lon),
+    height: station.altKm
+  };
+  return satellite.ecfToLookAngles(observer, satEcf);
+}
+
+function skyPointFromLook(look, cx, cy, R) {
+  const elevDeg = satellite.radiansToDegrees(look.elevation);
+  if (elevDeg < 0) return null;
+  const rho = R * ((90 - elevDeg) / 90);
+  return {
+    x: cx + rho * Math.sin(look.azimuth),
+    y: cy - rho * Math.cos(look.azimuth),
+    elevDeg
+  };
+}
+
+function updatePassSelectionUI() {
+  const buttons = passListEl.querySelectorAll(".pass-item-btn");
+  buttons.forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.passKey === selectedPassKey);
+  });
+}
+
+function drawSkyView(nowStates, now) {
+  const ctx = skyCanvasEl.getContext("2d");
+  const w = skyCanvasEl.width;
+  const h = skyCanvasEl.height;
+  const cx = w / 2;
+  const cy = h / 2;
+  const R = Math.min(w, h) * 0.44;
+
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "rgba(7,19,31,0.9)";
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.strokeStyle = "rgba(133,178,209,0.7)";
+  ctx.lineWidth = 1;
+  for (const elev of [0, 30, 60]) {
+    const rr = R * ((90 - elev) / 90);
+    ctx.beginPath();
+    ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = "rgba(133,178,209,0.45)";
+  ctx.beginPath(); ctx.moveTo(cx - R, cy); ctx.lineTo(cx + R, cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, cy - R); ctx.lineTo(cx, cy + R); ctx.stroke();
+
+  ctx.fillStyle = "#d2ecff";
+  ctx.font = "14px 'Space Grotesk', sans-serif";
+  ctx.fillText("N", cx - 5, cy - R - 8);
+  ctx.fillText("S", cx - 4, cy + R + 18);
+  ctx.fillText("W", cx - R - 18, cy + 4);
+  ctx.fillText("E", cx + R + 8, cy + 4);
+  ctx.fillStyle = "#9fc1db";
+  ctx.fillText("Horizon", 10, h - 10);
+
+  const station = getPrimaryGroundStation();
+  skyGsNameEl.textContent = station.name;
+
+  for (const st of nowStates) {
+    const satrec = satrecMap.get(st.norad);
+    if (satrec) {
+      const pts = [];
+      for (let dtMin = -15; dtMin <= 45; dtMin += 1) {
+        const t = new Date(now.getTime() + dtMin * 60000);
+        const pv = satellite.propagate(satrec, t);
+        if (!pv.position || !pv.velocity) continue;
+        const tempState = { positionEci: pv.position, norad: st.norad };
+        const lookTrack = computeLookFromStation(station, tempState, t);
+        const p = skyPointFromLook(lookTrack, cx, cy, R);
+        if (!p) continue;
+        pts.push(p);
+      }
+      if (pts.length > 1) {
+        ctx.strokeStyle = colorForNorad(st.norad);
+        ctx.globalAlpha = 0.35;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i += 1) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    const look = computeLookFromStation(station, st, now);
+    const pNow = skyPointFromLook(look, cx, cy, R);
+    if (!pNow) continue;
+    const color = colorForNorad(st.norad);
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(pNow.x, pNow.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.stroke();
+
+    ctx.fillStyle = color;
+    ctx.fillText(`${st.name} ${pNow.elevDeg.toFixed(1)} deg`, pNow.x + 9, pNow.y - 8);
+  }
+}
+
+function computeDopplerSeries(entry) {
+  const satrec = satrecMap.get(entry.norad);
+  if (!satrec) return [];
+
+  const station = entry.station;
+  const observer = {
+    latitude: satellite.degreesToRadians(station.lat),
+    longitude: satellite.degreesToRadians(station.lon),
+    height: station.altKm
+  };
+  const carrierHz = getCarrierHz();
+  const cKmPerSec = 299792.458;
+  const stepSec = 10;
+  const out = [];
+
+  for (let t = entry.rise.getTime(); t <= entry.set.getTime(); t += stepSec * 1000) {
+    const d1 = new Date(t);
+    const d2 = new Date(t + 1000);
+    const pv1 = satellite.propagate(satrec, d1);
+    const pv2 = satellite.propagate(satrec, d2);
+    if (!pv1.position || !pv2.position) continue;
+
+    const look1 = satellite.ecfToLookAngles(observer, satellite.eciToEcf(pv1.position, satellite.gstime(d1)));
+    const look2 = satellite.ecfToLookAngles(observer, satellite.eciToEcf(pv2.position, satellite.gstime(d2)));
+    const rangeRate = look2.rangeSat - look1.rangeSat;
+    const shiftHz = -(rangeRate / cKmPerSec) * carrierHz;
+
+    out.push({
+      time: new Date(t),
+      minutes: (t - entry.rise.getTime()) / 60000,
+      downlinkHz: shiftHz,
+      uplinkHz: -shiftHz
+    });
+  }
+
+  return out;
+}
+
+function drawDopplerProfile() {
+  const ctx = dopplerCanvasEl.getContext("2d");
+  const w = dopplerCanvasEl.width;
+  const h = dopplerCanvasEl.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "rgba(7,19,31,0.9)";
+  ctx.fillRect(0, 0, w, h);
+
+  if (!selectedPassKey) {
+    dopplerInfoEl.textContent = "Select a pass from the forecast list.";
+    return;
+  }
+
+  const entry = passEntries.find((p) => p.key === selectedPassKey);
+  if (!entry) {
+    dopplerInfoEl.textContent = "Selected pass is no longer available. Select another one.";
+    selectedPassKey = "";
+    return;
+  }
+
+  const series = computeDopplerSeries(entry);
+  if (series.length < 2) {
+    dopplerInfoEl.textContent = "Unable to compute Doppler profile for this pass.";
+    return;
+  }
+
+  const margin = { l: 56, r: 18, t: 20, b: 36 };
+  const pw = w - margin.l - margin.r;
+  const ph = h - margin.t - margin.b;
+  const minX = 0;
+  const maxX = series[series.length - 1].minutes;
+  const allKhz = series.flatMap((p) => [p.downlinkHz / 1000, p.uplinkHz / 1000]);
+  const minY = Math.min(...allKhz);
+  const maxY = Math.max(...allKhz);
+  const padY = Math.max(0.2, (maxY - minY) * 0.15);
+  const y0 = minY - padY;
+  const y1 = maxY + padY;
+
+  const xToPx = (x) => margin.l + ((x - minX) / Math.max(1e-6, (maxX - minX))) * pw;
+  const yToPx = (y) => margin.t + ((y1 - y) / Math.max(1e-6, (y1 - y0))) * ph;
+
+  ctx.strokeStyle = "rgba(133,178,209,0.4)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i += 1) {
+    const y = y0 + ((y1 - y0) * i) / 4;
+    const py = yToPx(y);
+    ctx.beginPath(); ctx.moveTo(margin.l, py); ctx.lineTo(w - margin.r, py); ctx.stroke();
+    ctx.fillStyle = "#a9cbe3";
+    ctx.font = "12px 'Space Grotesk', sans-serif";
+    ctx.fillText(`${y.toFixed(1)} kHz`, 6, py + 4);
+  }
+
+  const zeroPy = yToPx(0);
+  ctx.strokeStyle = "rgba(200,240,220,0.65)";
+  ctx.beginPath(); ctx.moveTo(margin.l, zeroPy); ctx.lineTo(w - margin.r, zeroPy); ctx.stroke();
+
+  ctx.strokeStyle = "#7fffd4";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  series.forEach((p, i) => {
+    const x = xToPx(p.minutes);
+    const y = yToPx(p.downlinkHz / 1000);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  ctx.strokeStyle = "#f6ba6f";
+  ctx.beginPath();
+  series.forEach((p, i) => {
+    const x = xToPx(p.minutes);
+    const y = yToPx(p.uplinkHz / 1000);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  ctx.fillStyle = "#d2ecff";
+  ctx.fillText("Time from AOS (min)", w / 2 - 55, h - 8);
+  ctx.fillStyle = "#7fffd4";
+  ctx.fillText("Downlink shift", w - 190, 20);
+  ctx.fillStyle = "#f6ba6f";
+  ctx.fillText("Uplink shift", w - 190, 36);
+
+  dopplerInfoEl.textContent = `${entry.name} | Rise ${formatDateTimeDisplay(entry.rise, false)} | Set ${formatDateTimeDisplay(entry.set, false)} | Freq ${Number(lbFreqEl.value || 437).toFixed(1)} MHz`;
+}
 async function fetchCatalogFromCelestrak() {
   let lastError = null;
   for (const url of CATALOG_URL_CANDIDATES) {
@@ -432,19 +718,43 @@ function renderPassForecast() {
   passListEl.innerHTML = "";
   const primary = getPrimaryGroundStation();
   passTitleEl.textContent = primary.name;
-  if (!selectedNorads.length) return;
+  passEntries = [];
+  if (!selectedNorads.length) { drawDopplerProfile(); return; }
   const now = getCurrentTime(), entries = [];
   for (const norad of selectedNorads) {
     const name = catalog.find((c) => c.norad === norad)?.name || norad;
-    for (const pass of computePassForecast(norad, primary, now, PASS_FORECAST_WINDOW_HOURS)) entries.push({ name, ...pass });
+    for (const pass of computePassForecast(norad, primary, now, PASS_FORECAST_WINDOW_HOURS)) {
+      const key = `${norad}-${pass.rise.toISOString()}`;
+      entries.push({ key, name, norad, station: { ...primary }, ...pass });
+    }
   }
   entries.sort((a, b) => a.rise - b.rise);
-  if (!entries.length) { const li = document.createElement("li"); li.textContent = `No passes above 5 deg for ${primary.name} in the next 48 hours.`; passListEl.appendChild(li); return; }
+  passEntries = entries;
+  if (!entries.length) {
+    selectedPassKey = "";
+    const li = document.createElement("li");
+    li.textContent = `No passes above 5 deg for ${primary.name} in the next 48 hours.`;
+    passListEl.appendChild(li);
+    drawDopplerProfile();
+    return;
+  }
+
+  if (!entries.some((p) => p.key === selectedPassKey)) {
+    selectedPassKey = entries[0].key;
+  }
+
   for (const pass of entries.slice(0, 80)) {
     const li = document.createElement("li");
-    li.textContent = `${pass.name} | Rise ${pass.rise.toISOString().replace("T", " ").slice(0, 16)} UTC | Max ${pass.maxTime.toISOString().replace("T", " ").slice(0, 16)} UTC (${pass.maxElevation.toFixed(1)} deg) | Set ${pass.set.toISOString().replace("T", " ").slice(0, 16)} UTC`;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `pass-item-btn${pass.key === selectedPassKey ? " active" : ""}`;
+    btn.dataset.passKey = pass.key;
+    btn.textContent = `${pass.name} | Rise ${formatDateTimeDisplay(pass.rise, false)} | Max ${formatDateTimeDisplay(pass.maxTime, false)} (${pass.maxElevation.toFixed(1)} deg) | Set ${formatDateTimeDisplay(pass.set, false)}`;
+    li.appendChild(btn);
     passListEl.appendChild(li);
   }
+  updatePassSelectionUI();
+  drawDopplerProfile();
 }
 
 async function loadWorldData() {
@@ -465,10 +775,10 @@ function updateSimulationClock(dtMs) { if (simEnabledEl.checked) simTimeMs += dt
 function tick(dtMs = FRAME_MS) {
   updateSimulationClock(dtMs);
   const now = getCurrentTime();
-  utcEl.textContent = now.toISOString();
+  utcEl.textContent = formatDateTimeDisplay(now, true);
   const nowStates = [];
   for (const norad of selectedNorads) { const st = propagateSatelliteAt(norad, now); if (st) nowStates.push(st); }
-  renderDayNight(now); renderMaskForPrimary(nowStates); renderGroundStationsMap(); renderMarkers(nowStates); renderStats(nowStates); calculateLiveLinks(nowStates, now);
+  renderDayNight(now); renderMaskForPrimary(nowStates); renderGroundStationsMap(); renderMarkers(nowStates); renderStats(nowStates); calculateLiveLinks(nowStates, now); drawSkyView(nowStates, now);
   const nowReal = Date.now();
   if (nowReal - lastTrajectoryRenderMs >= TRAJECTORY_REFRESH_MS) { renderTrajectory(now); lastTrajectoryRenderMs = nowReal; }
   if (nowReal - lastPassForecastMs > PASS_RECALC_MS) { renderPassForecast(); lastPassForecastMs = nowReal; }
@@ -482,7 +792,7 @@ function startAnimationLoop() {
 
 async function bootstrap() {
   try {
-    loadGroundStations(); renderGroundStationList(); applySimulationControlsState(); simStartEl.value = toDateTimeLocalValue(Date.now());
+    loadGroundStations(); renderGroundStationList(); applySimulationControlsState(); updateTimeControlsUI(); simStartEl.value = toDateTimeLocalValue(Date.now());
     await loadWorldData();
     fitProjection(); await loadCatalog(false); await loadSelectedSatellites(); tick(FRAME_MS); startAnimationLoop();
   } catch (err) { setStatus(`Error: ${err.message}`); }
@@ -497,7 +807,36 @@ simStartEl.addEventListener("change", () => { if (!simStartEl.value) return; con
 simSpeedEl.addEventListener("change", () => { updateClockMode(); renderPassForecast(); });
 simNowEl.addEventListener("click", () => { simTimeMs = Date.now(); simStartEl.value = toDateTimeLocalValue(simTimeMs); renderPassForecast(); });
 addGsBtn.addEventListener("click", addGroundStationFromForm);
-[lbFreqEl, lbGsTxEl, lbGsGainEl, lbSatTxEl, lbSatGainEl].forEach((el) => el.addEventListener("input", () => tick(0)));
+[lbFreqEl, lbGsTxEl, lbGsGainEl, lbSatTxEl, lbSatGainEl].forEach((el) => el.addEventListener("input", () => { tick(0); drawDopplerProfile(); }));
+passListEl.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+  if (!target) return;
+  const btn = target.closest(".pass-item-btn");
+  if (!btn || !btn.dataset.passKey) return;
+  selectedPassKey = btn.dataset.passKey;
+  updatePassSelectionUI();
+  drawDopplerProfile();
+});
+timeLocalToggleEl.addEventListener("change", () => {
+  if (timeLocalToggleEl.checked) timeCustomToggleEl.checked = false;
+  updateTimeControlsUI();
+  renderPassForecast();
+  drawDopplerProfile();
+  tick(0);
+});
+timeCustomToggleEl.addEventListener("change", () => {
+  if (timeCustomToggleEl.checked) timeLocalToggleEl.checked = false;
+  updateTimeControlsUI();
+  renderPassForecast();
+  drawDopplerProfile();
+  tick(0);
+});
+timeZoneInputEl.addEventListener("input", () => {
+  updateTimeControlsUI();
+  renderPassForecast();
+  drawDopplerProfile();
+  tick(0);
+});
 window.addEventListener("resize", () => { fitProjection(); renderTrajectory(getCurrentTime()); tick(FRAME_MS); });
 
 bootstrap();
